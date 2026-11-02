@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Motion Lock</title>
+<style>
+/* Layout idea: one mobile column, four numbered step cards, verdict card is the visual focus. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --ink:#142030; --muted:#5a6a7c; --line:#dae1e9;
+  --accent:#0b7a75; --accent-ink:#ffffff;
+  --good:#17692f; --good-bg:#dcf4e2; --bad:#a82a1f; --bad-bg:#fde3e0; --idle-bg:#e7ecf2;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e141b; --surface:#16202b; --ink:#e8eef5; --muted:#93a3b5; --line:#263444;
+    --accent:#3cc4bb; --accent-ink:#06211f;
+    --good:#7fdc98; --good-bg:#12331f; --bad:#ff9d93; --bad-bg:#3a1a17; --idle-bg:#1f2b38;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);-webkit-text-size-adjust:100%}
+main{max-width:520px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+h1{font-size:26px;margin:0;letter-spacing:-0.02em}
+h2{font-size:17px;margin:0;font-weight:650}
+.sub{margin:4px 0 0;color:var(--muted);font-size:14px;line-height:1.4}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.step{display:flex;align-items:center;gap:10px}
+.step .n{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:700;display:grid;place-items:center;flex:none}
+.step h2{flex:1}
+.pill{font-size:12px;font-weight:650;padding:4px 10px;border-radius:99px;background:var(--idle-bg);color:var(--muted);white-space:nowrap}
+.pill.on{background:var(--good-bg);color:var(--good)}
+.pill.warn{background:var(--bad-bg);color:var(--bad)}
+p{margin:0}
+.meta{font-size:13px;color:var(--muted);line-height:1.45}
+button{font:inherit;font-weight:650;font-size:16px;border-radius:11px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:13px 14px;min-height:48px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,.chips label:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+canvas{width:100%;height:96px;display:block;border-radius:10px;background:var(--idle-bg)}
+.chips{display:flex;gap:8px}
+.chips label{position:relative;flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:10px 0;font-size:15px;font-weight:600;cursor:pointer;color:var(--muted)}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+.chips label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.bar{height:10px;border-radius:99px;background:var(--idle-bg);overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
+.verdict{border-radius:12px;padding:18px 14px;text-align:center;background:var(--idle-bg);color:var(--muted)}
+.verdict b{display:block;font-size:24px;letter-spacing:-0.01em}
+.verdict span{font-size:13px}
+.verdict.ok{background:var(--good-bg);color:var(--good)}
+.verdict.no{background:var(--bad-bg);color:var(--bad)}
+.meter{position:relative;height:12px;border-radius:99px;background:var(--idle-bg)}
+.meter>i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--accent);width:0;transition:width .2s}
+.meter>u{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:var(--ink);opacity:.6}
+.meterlbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 4px;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);font-weight:600}
+td.num{font-family:var(--mono);text-align:right}
+th.num{text-align:right}
+textarea{width:100%;min-height:120px;font:12px var(--mono);border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px}
+.hidden{display:none}
+@media (prefers-reduced-motion: reduce){.bar>i,.meter>i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Motion Lock</h1>
+    <p class="sub">Learns how you move your iPhone, then flags motion that does not match. Runs fully on this phone.</p>
+  </header>
+
+  <section class="card" aria-labelledby="h1s">
+    <div class="step"><span class="n">1</span><h2 id="h1s">Sensors</h2><span id="sensorPill" class="pill">Off</span></div>
+    <button id="enableBtn" class="primary" type="button">Enable motion sensors</button>
+    <canvas id="trace" aria-label="Live accelerometer trace"></canvas>
+    <p class="meta" id="sensorMeta">Tap the button and allow motion access when Safari asks.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h2s">
+    <div class="step"><span class="n">2</span><h2 id="h2s">Record my motion</h2><span id="modelPill" class="pill">No model</span></div>
+    <p class="meta">Hold the phone and move the way you normally do, for example walking with it in your hand. Keep to the same activity the whole time.</p>
+    <div class="chips" role="radiogroup" aria-label="Recording length">
+      <label><input type="radio" name="dur" value="30">30 s</label>
+      <label><input type="radio" name="dur" value="60" checked>60 s</label>
+      <label><input type="radio" name="dur" value="120">120 s</label>
+    </div>
+    <button id="trainBtn" class="primary" type="button" disabled>Record my motion</button>
+    <div class="bar" aria-hidden="true"><i id="trainBar"></i></div>
+    <p class="meta" id="trainMeta">No recording yet.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h3s">
+    <div class="step"><span class="n">3</span><h2 id="h3s">Live check</h2></div>
+    <div id="verdict" class="verdict" aria-live="polite"><b>No model yet</b><span>Record your motion first.</span></div>
+    <div>
+      <div class="meter" aria-hidden="true"><i id="meterFill"></i><u></u></div>
+      <div class="meterlbl"><span>closer to you</span><span>limit</span><span>further away</span></div>
+    </div>
+    <div>
+      <label for="sens" class="meta">Strictness: <b id="sensVal">normal</b></label>
+      <input id="sens" type="range" min="0.6" max="1.6" step="0.1" value="1.0" style="width:100%" aria-describedby="sensVal">
+      <div class="meterlbl"><span>stricter</span><span>more forgiving</span></div>
+    </div>
+    <button id="monBtn" type="button" disabled>Start live check</button>
+  </section>
+
+  <section class="card" aria-labelledby="h4s">
+    <div class="step"><span class="n">4</span><h2 id="h4s">Measure accuracy</h2></div>
+    <p class="meta">Each test runs 20 seconds. For "someone else", hand the phone to another person doing the same activity as you.</p>
+    <div class="row">
+      <button id="testMe" type="button" disabled>Test as me</button>
+      <button id="testOther" type="button" disabled>Test as someone else</button>
+    </div>
+    <div class="bar" aria-hidden="true"><i id="testBar"></i></div>
+    <p class="meta" id="testMeta">No tests yet.</p>
+    <table>
+      <thead><tr><th>Who</th><th class="num">Windows</th><th class="num">Correct</th><th class="num">Rate</th></tr></thead>
+      <tbody>
+        <tr><td>Me (should match)</td><td class="num" id="meN">0</td><td class="num" id="meA">0</td><td class="num" id="meR">-</td></tr>
+        <tr><td>Other (should not match)</td><td class="num" id="otN">0</td><td class="num" id="otA">0</td><td class="num" id="otR">-</td></tr>
+        <tr><td><b>Balanced accuracy</b></td><td></td><td></td><td class="num" id="balR">-</td></tr>
+      </tbody>
+    </table>
+    <button id="resetTests" type="button">Reset results</button>
+  </section>
+
+  <section class="card" aria-labelledby="h5s">
+    <div class="step"><h2 id="h5s">Save for the report</h2></div>
+    <div class="row">
+      <button id="copyBtn" type="button">Copy summary</button>
+      <button id="csvBtn" type="button" disabled>Download CSV</button>
+    </div>
+    <textarea id="summaryBox" class="hidden" readonly aria-label="Session summary"></textarea>
+  </section>
+</main>
+
+<script>
+// ==CORE START==
+const WIN_MS = 2000, STEP_MS = 500, RESAMPLE_N = 64;
+const FEATURE_NAMES = [
+  'acc_mean_x','acc_mean_y','acc_mean_z','acc_std_x','acc_std_y','acc_std_z',
+  'acc_mag_std','acc_mag_range','gyro_mag_mean','gyro_mag_std','gyro_mag_max',
+  'acc_band_0.5-2Hz','acc_band_2-4Hz','acc_band_4-8Hz','acc_band_8-16Hz',
+  'gyro_band_0.5-2Hz','gyro_band_2-4Hz','gyro_band_4-8Hz','gyro_band_8-16Hz',
+  'acc_dominant_Hz','acc_centroid_Hz'
+];
+function mag(x,y,z){ return Math.sqrt(x*x+y*y+z*z); }
+function mean(a){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]; return a.length? s/a.length : 0; }
+function std(a){ const m=mean(a); let s=0; for(let i=0;i<a.length;i++) s+=(a[i]-m)*(a[i]-m); return a.length? Math.sqrt(s/a.length) : 0; }
+function percentile(a,p){ const s=a.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1, Math.ceil(p*(s.length-1)))]; }
+function resample(ts, vals, t0, t1, n){
+  const out = new Array(n); let j = 0;
+  for(let i=0;i<n;i++){
+    const t = t0 + (t1-t0)*i/(n-1);
+    while(j < ts.length-2 && ts[j+1] < t) j++;
+    const ta = ts[j], tb = ts[j+1];
+    const f = tb > ta ? Math.min(1, Math.max(0, (t-ta)/(tb-ta))) : 0;
+    out[i] = vals[j] + (vals[j+1]-vals[j])*f;
+  }
+  return out;
+}
+function spectrum(sig, dur){
+  const n = sig.length, m = mean(sig);
+  const x = sig.map((v,i)=> (v-m) * (0.5 - 0.5*Math.cos(2*Math.PI*i/(n-1))));
+  const edges = [[0.5,2],[2,4],[4,8],[8,16.01]];
+  const bands = [0,0,0,0]; let best = 0, bestE = -1, num = 0, den = 0;
+  for(let k=1;k<=n/2;k++){
+    let re=0, im=0;
+    for(let i=0;i<n;i++){ const a = 2*Math.PI*k*i/n; re += x[i]*Math.cos(a); im -= x[i]*Math.sin(a); }
+    const e = (re*re+im*im)/(n*n), f = k/dur;
+    if(f < 0.5) continue;
+    for(let b=0;b<4;b++) if(f >= edges[b][0] && f < edges[b][1]) bands[b] += e;
+    if(e > bestE){ bestE = e; best = f; }
+    num += f*e; den += e;
+  }
+  return { bands: bands.map(e => Math.log10(e + 1e-4)), dom: best, centroid: den > 0 ? num/den : 0 };
+}
+// w = {t:[ms], ax,ay,az, gx,gy,gz} for one window; returns a feature vector or null if the window is unusable
+function extractFeatures(w){
+  const n = w.t.length;
+  if(n < 24) return null;
+  for(let i=1;i<n;i++) if(w.t[i]-w.t[i-1] > 250) return null;
+  const t0 = w.t[0], t1 = w.t[n-1], dur = (t1-t0)/1000;
+  if(dur < WIN_MS/1000*0.8) return null;
+  const am = [], gm = [];
+  for(let i=0;i<n;i++){ am.push(mag(w.ax[i],w.ay[i],w.az[i])); gm.push(mag(w.gx[i],w.gy[i],w.gz[i])); }
+  const sa = spectrum(resample(w.t, am, t0, t1, RESAMPLE_N), dur);
+  const sg = spectrum(resample(w.t, gm, t0, t1, RESAMPLE_N), dur);
+  return [
+    mean(w.ax), mean(w.ay), mean(w.az), std(w.ax), std(w.ay), std(w.az),
+    std(am), Math.max(...am)-Math.min(...am), mean(gm), std(gm), Math.max(...gm),
+    ...sa.bands, ...sg.bands, sa.dom, sa.centroid
+  ];
+}
+function fitNorm(X){
+  const d = X[0].length, mu = [], sd = [];
+  for(let j=0;j<d;j++){
+    const col = X.map(r => r[j]), m = mean(col), s = std(col);
+    mu.push(m); sd.push(Math.max(s, 0.25*Math.abs(m), 0.02));
+  }
+  return { mu, sd };
+}
+function zscore(x, norm){ return x.map((v,j) => (v-norm.mu[j])/norm.sd[j]); }
+function knnScore(z, ref, k){
+  const d = z.length, dist = [];
+  for(let i=0;i<ref.length;i++){
+    let s = 0; for(let j=0;j<d;j++){ const q = z[j]-ref[i][j]; s += q*q; }
+    dist.push(Math.sqrt(s/d));
+  }
+  dist.sort((a,b)=>a-b);
+  const m = Math.min(k, dist.length); let t = 0;
+  for(let i=0;i<m;i++) t += dist[i];
+  return t/m;
+}
+// One-class model: distance to the owner's k nearest training windows. The limit comes from 5-fold
+// blocked cross-validation (whole time blocks held out) so it reflects drift within a session.
+function trainModel(X, k){
+  k = k || 3;
+  const norm = fitNorm(X), Z = X.map(x => zscore(x, norm)), n = Z.length, blocks = 5;
+  const per = Math.ceil(n/blocks), cv = [];
+  for(let i=0;i<n;i++){
+    const bi = Math.floor(i/per), ref = [];
+    for(let j=0;j<n;j++) if(Math.floor(j/per) !== bi) ref.push(Z[j]);
+    cv.push(knnScore(Z[i], ref, k));
+  }
+  const thr = percentile(cv, 0.95) * 1.5;
+  return { k, norm, Z, thr, n, cvMedian: percentile(cv, 0.5) };
+}
+function classify(model, x, scale){
+  const lim = model.thr * (scale || 1);
+  const score = knnScore(zscore(x, model.norm), model.Z, model.k);
+  return { score, ratio: score/lim, owner: score <= lim };
+}
+// ==CORE END==
+
+// ---------- app ----------
+const $ = id => document.getElementById(id);
+const S = {
+  listening:false, live:false, active:false, monitoring:false,
+  buf:{t:[],ax:[],ay:[],az:[],gx:[],gy:[],gz:[]}, lastEmit:0, rateT:[],
+  trace:[], sens:1, model:null, trainX:[], recent:[], ratios:[], rec:null,
+  tests:{me:{a:0,n:0}, other:{a:0,n:0}}, log:[], wake:null
+};
+function logEvt(m){ S.log.push(new Date().toLocaleTimeString() + '  ' + m); }
+function durSel(){ return Number(document.querySelector('input[name=dur]:checked').value); }
+
+function onMotion(e){
+  const a = e.accelerationIncludingGravity, r = e.rotationRate;
+  if(!a || a.x == null) return;
+  const t = performance.now(), b = S.buf;
+  b.t.push(t); b.ax.push(a.x); b.ay.push(a.y); b.az.push(a.z);
+  b.gx.push(r && r.beta != null ? r.beta : 0);
+  b.gy.push(r && r.gamma != null ? r.gamma : 0);
+  b.gz.push(r && r.alpha != null ? r.alpha : 0);
+  while(b.t.length && t - b.t[0] > WIN_MS + 500){ for(const key in b) b[key].shift(); }
+  S.rateT.push(t); while(S.rateT.length && t - S.rateT[0] > 1000) S.rateT.shift();
+  S.trace.push([t, mag(a.x,a.y,a.z)]); while(S.trace.length && t - S.trace[0][0] > 4000) S.trace.shift();
+  if(!S.live){ S.live = true; refreshUI(); }
+  if(S.active && t - S.lastEmit >= STEP_MS && b.t.length > 20 && t - b.t[0] >= WIN_MS*0.95){
+    S.lastEmit = t;
+    let i0 = 0; while(i0 < b.t.length && b.t[i0] < t - WIN_MS) i0++;
+    const w = {}; for(const key in b) w[key] = b[key].slice(i0);
+    const f = extractFeatures(w);
+    if(f) onWindow(f);
+  }
+}
+
+function onWindow(f){
+  const rec = S.rec;
+  if(rec && rec.kind === 'train'){
+    S.trainX.push(f);
+    $('trainMeta').textContent = 'Recording... ' + S.trainX.length + ' windows collected.';
+  } else if(rec && rec.kind.startsWith('test')){
+    if(!S.model) return;
+    const c = classify(S.model, f, S.sens), key = rec.kind === 'test-me' ? 'me' : 'other';
+    S.tests[key].n++;
+    if((key === 'me') === c.owner) S.tests[key].a++;
+    renderTests();
+  } else if(S.monitoring && S.model){
+    const c = classify(S.model, f, S.sens);
+    S.recent.push(c.owner); if(S.recent.length > 5) S.recent.shift();
+    S.ratios.push(c.ratio); if(S.ratios.length > 5) S.ratios.shift();
+    renderVerdict();
+  }
+}
+
+function startRec(kind, dur){
+  stopMonitor();
+  S.rec = { kind, dur, begin: performance.now() + 3000, started:false };
+  S.active = false;
+  if(kind === 'train') S.trainX = [];
+  refreshUI();
+}
+function tick(){
+  const rec = S.rec; if(!rec) return;
+  const now = performance.now();
+  const isTrain = rec.kind === 'train';
+  const bar = $(isTrain ? 'trainBar' : 'testBar'), meta = $(isTrain ? 'trainMeta' : 'testMeta');
+  if(!rec.started){
+    const left = Math.ceil((rec.begin - now)/1000);
+    if(left > 0){ meta.textContent = 'Get ready... starting in ' + left; bar.style.width = '0%'; return; }
+    rec.started = true; rec.t0 = now;
+    for(const key in S.buf) S.buf[key].length = 0;
+    S.lastEmit = now; S.active = true;
+    logEvt('Started ' + rec.kind + ' (' + rec.dur + ' s)');
+  }
+  const p = (now - rec.t0)/1000/rec.dur;
+  bar.style.width = Math.min(100, p*100) + '%';
+  if(!isTrain) meta.textContent = (rec.kind === 'test-me' ? 'Testing as you' : 'Testing as someone else') + '... ' + Math.max(0, Math.ceil(rec.dur - (now-rec.t0)/1000)) + ' s left';
+  if(p >= 1) finishRec();
+}
+function finishRec(){
+  const rec = S.rec; S.rec = null; S.active = false;
+  if(rec.kind === 'train'){
+    if(S.trainX.length < 20){
+      $('trainMeta').textContent = 'Only ' + S.trainX.length + ' usable windows. Keep the phone moving and try a longer recording.';
+      logEvt('Training failed: ' + S.trainX.length + ' windows');
+    } else {
+      S.model = trainModel(S.trainX);
+      S.tests = {me:{a:0,n:0}, other:{a:0,n:0}};
+      saveModel();
+      $('trainMeta').textContent = 'Trained on ' + S.model.n + ' windows.';
+      logEvt('Trained on ' + S.model.n + ' windows, limit ' + S.model.thr.toFixed(3));
+    }
+    $('trainBar').style.width = '100%';
+  } else {
+    $('testMeta').textContent = 'Test finished.';
+    $('testBar').style.width = '100%';
+    logEvt('Finished ' + rec.kind + ': me ' + S.tests.me.a + '/' + S.tests.me.n + ', other ' + S.tests.other.a + '/' + S.tests.other.n);
+  }
+  renderTests(); refreshUI(); renderVerdict();
+}
+
+function startMonitor(){
+  if(!S.model) return;
+  S.monitoring = true; S.recent = []; S.ratios = [];
+  for(const key in S.buf) S.buf[key].length = 0;
+  S.lastEmit = performance.now(); S.active = true;
+  logEvt('Live check on'); refreshUI(); renderVerdict();
+}
+function stopMonitor(){
+  if(!S.monitoring) return;
+  S.monitoring = false; if(!S.rec) S.active = false;
+  logEvt('Live check off'); refreshUI(); renderVerdict();
+}
+
+function renderVerdict(){
+  const v = $('verdict'), fill = $('meterFill');
+  v.className = 'verdict';
+  if(!S.model){ v.innerHTML = '<b>No model yet</b><span>Record your motion first.</span>'; fill.style.width = '0'; return; }
+  if(!S.monitoring){ v.innerHTML = '<b>Ready</b><span>Start the live check to compare your motion to the model.</span>'; fill.style.width = '0'; return; }
+  if(S.recent.length < 3){ v.innerHTML = '<b>Listening...</b><span>Need a few seconds of motion.</span>'; fill.style.width = '0'; return; }
+  const yes = S.recent.filter(Boolean).length, ok = yes*2 > S.recent.length;
+  const r = mean(S.ratios);
+  v.classList.add(ok ? 'ok' : 'no');
+  v.innerHTML = ok ? '<b>Matches owner</b><span>' + yes + ' of last ' + S.recent.length + ' windows match</span>'
+                   : '<b>Does not match owner</b><span>' + (S.recent.length - yes) + ' of last ' + S.recent.length + ' windows differ</span>';
+  fill.style.width = Math.min(100, r*50) + '%';
+}
+function renderTests(){
+  const m = S.tests.me, o = S.tests.other;
+  $('meN').textContent = m.n; $('meA').textContent = m.a; $('meR').textContent = m.n ? Math.round(100*m.a/m.n) + '%' : '-';
+  $('otN').textContent = o.n; $('otA').textContent = o.a; $('otR').textContent = o.n ? Math.round(100*o.a/o.n) + '%' : '-';
+  $('balR').textContent = (m.n && o.n) ? Math.round(50*(m.a/m.n + o.a/o.n)) + '%' : '-';
+}
+function refreshUI(){
+  const busy = !!S.rec, ready = S.live && !busy;
+  $('trainBtn').disabled = !ready;
+  $('monBtn').disabled = !(ready && S.model);
+  $('monBtn').textContent = S.monitoring ? 'Stop live check' : 'Start live check';
+  $('testMe').disabled = !(ready && S.model);
+  $('testOther').disabled = !(ready && S.model);
+  $('csvBtn').disabled = !S.trainX.length;
+  const mp = $('modelPill');
+  if(S.model){ mp.textContent = 'Trained'; mp.className = 'pill on'; $('trainMeta').textContent = $('trainMeta').textContent.startsWith('Recording') || $('trainMeta').textContent.startsWith('Get ready') ? $('trainMeta').textContent : 'Model ready: ' + S.model.n + ' windows, limit ' + S.model.thr.toFixed(2) + '.'; }
+  else { mp.textContent = 'No model'; mp.className = 'pill'; }
+  const sp = $('sensorPill');
+  if(S.live){ sp.textContent = 'Live'; sp.className = 'pill on'; }
+}
+
+// ---------- sensors ----------
+async function enableSensors(){
+  const meta = $('sensorMeta'), pill = $('sensorPill');
+  try{
+    if(!window.isSecureContext){ meta.textContent = 'Motion sensors need a secure (https) page. Open this page from its https link.'; pill.textContent = 'Blocked'; pill.className = 'pill warn'; return; }
+    if(typeof DeviceMotionEvent === 'undefined'){ meta.textContent = 'This browser does not expose motion sensors. Open the page in Safari on your iPhone.'; pill.textContent = 'Unsupported'; pill.className = 'pill warn'; return; }
+    if(typeof DeviceMotionEvent.requestPermission === 'function'){
+      const r = await DeviceMotionEvent.requestPermission();
+      if(r !== 'granted'){ meta.textContent = 'Motion access was denied. Quit Safari, reopen this page and tap Allow.'; pill.textContent = 'Denied'; pill.className = 'pill warn'; return; }
+    }
+    if(!S.listening){ window.addEventListener('devicemotion', onMotion); S.listening = true; }
+    pill.textContent = 'Waiting'; meta.textContent = 'Waiting for the first reading...';
+    requestWake();
+    setTimeout(() => { if(!S.live){ meta.textContent = 'No motion data yet. This only works on a phone or tablet, not a desktop browser.'; pill.textContent = 'No data'; pill.className = 'pill warn'; } }, 2500);
+    logEvt('Sensors enabled');
+  } catch(err){
+    meta.textContent = 'Could not start sensors: ' + (err && err.message ? err.message : err);
+    pill.textContent = 'Error'; pill.className = 'pill warn';
+  }
+}
+async function requestWake(){
+  try{ if('wakeLock' in navigator && !S.wake){ S.wake = await navigator.wakeLock.request('screen'); S.wake.addEventListener('release', () => { S.wake = null; }); } }catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && S.listening) requestWake(); });
+
+// ---------- trace ----------
+function drawTrace(){
+  const c = $('trace'), dpr = window.devicePixelRatio || 1;
+  const w = Math.round(c.clientWidth*dpr), h = Math.round(c.clientHeight*dpr);
+  if(c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+  const g = c.getContext('2d'), cs = getComputedStyle(document.documentElement);
+  g.clearRect(0,0,w,h);
+  const d = S.trace;
+  if(d.length > 2){
+    const now = d[d.length-1][0], vals = d.map(p => p[1]), m = mean(vals);
+    let span = Math.max(2, Math.max(...vals.map(v => Math.abs(v-m)))*1.2);
+    g.strokeStyle = cs.getPropertyValue('--line'); g.lineWidth = dpr; g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+    g.strokeStyle = cs.getPropertyValue('--accent'); g.lineWidth = 2*dpr; g.lineJoin = 'round'; g.beginPath();
+    d.forEach((p,i) => { const x = w - (now-p[0])/4000*w, y = h/2 - (p[1]-m)/span*(h/2-6*dpr); i ? g.lineTo(x,y) : g.moveTo(x,y); });
+    g.stroke();
+    $('sensorMeta').textContent = S.rateT.length + ' readings per second. Trace shows acceleration strength over the last 4 seconds.';
+  }
+  requestAnimationFrame(drawTrace);
+}
+
+// ---------- save / export ----------
+function saveModel(){
+  try{ localStorage.setItem('motionlock-model', JSON.stringify({ k:S.model.k, norm:S.model.norm, Z:S.model.Z, thr:S.model.thr, n:S.model.n, cvMedian:S.model.cvMedian })); }catch(e){}
+}
+function loadModel(){
+  try{ const raw = localStorage.getItem('motionlock-model'); if(raw){ S.model = JSON.parse(raw); logEvt('Loaded saved model (' + S.model.n + ' windows)'); } }catch(e){}
+}
+function summaryText(){
+  const m = S.tests.me, o = S.tests.other;
+  const lines = ['Motion Lock session summary', new Date().toString(), '',
+    'Window: ' + WIN_MS/1000 + ' s, step ' + STEP_MS/1000 + ' s, ' + FEATURE_NAMES.length + ' features, model: one-class k-nearest-neighbor (k=3)'];
+  if(S.model) lines.push('Training windows: ' + S.model.n, 'Decision limit: ' + S.model.thr.toFixed(3) + ' (95th percentile of blocked-CV distances x 1.5), strictness setting ' + S.sens.toFixed(2) + '');
+  lines.push('Owner windows accepted: ' + m.a + '/' + m.n + (m.n ? ' (' + Math.round(100*m.a/m.n) + '%)' : ''),
+             'Other windows rejected: ' + o.a + '/' + o.n + (o.n ? ' (' + Math.round(100*o.a/o.n) + '%)' : ''));
+  if(m.n && o.n) lines.push('Balanced accuracy: ' + Math.round(50*(m.a/m.n + o.a/o.n)) + '%');
+  lines.push('', 'Event log:'); S.log.forEach(l => lines.push(l));
+  return lines.join('\n');
+}
+async function copySummary(){
+  const text = summaryText(), box = $('summaryBox');
+  try{ await navigator.clipboard.writeText(text); $('copyBtn').textContent = 'Copied'; setTimeout(() => $('copyBtn').textContent = 'Copy summary', 1500); }
+  catch(e){ box.classList.remove('hidden'); box.value = text; box.focus(); box.select(); }
+}
+function downloadCsv(){
+  if(!S.trainX.length) return;
+  const rows = [FEATURE_NAMES.join(',')].concat(S.trainX.map(r => r.map(v => v.toFixed(5)).join(',')));
+  try{
+    const url = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
+    const a = document.createElement('a'); a.href = url; a.download = 'motionlock-training-windows.csv';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }catch(e){ const box = $('summaryBox'); box.classList.remove('hidden'); box.value = rows.join('\n'); }
+}
+
+// ---------- wire up ----------
+$('enableBtn').addEventListener('click', enableSensors);
+$('trainBtn').addEventListener('click', () => startRec('train', durSel()));
+$('testMe').addEventListener('click', () => startRec('test-me', 20));
+$('testOther').addEventListener('click', () => startRec('test-other', 20));
+$('monBtn').addEventListener('click', () => S.monitoring ? stopMonitor() : startMonitor());
+$('resetTests').addEventListener('click', () => { S.tests = {me:{a:0,n:0}, other:{a:0,n:0}}; renderTests(); $('testMeta').textContent = 'Results cleared.'; $('testBar').style.width = '0'; });
+$('sens').addEventListener('input', e => { S.sens = Number(e.target.value); $('sensVal').textContent = S.sens === 1 ? 'normal' : (S.sens < 1 ? 'stricter (' : 'more forgiving (') + S.sens.toFixed(1) + 'x)'; });
+$('copyBtn').addEventListener('click', copySummary);
+$('csvBtn').addEventListener('click', downloadCsv);
+loadModel(); renderTests(); renderVerdict(); refreshUI();
+setInterval(tick, 100);
+requestAnimationFrame(drawTrace);
+</script>
+</body>
+</html>
