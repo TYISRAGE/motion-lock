@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Motion Lock</title>
 <style>
-/* Layout idea: one mobile column, four numbered step cards, verdict card is the visual focus. */
+/* Layout idea: one mobile column of numbered step cards; the trust card in step 3 is the visual focus. */
 :root{
   --bg:#f3f5f8; --surface:#ffffff; --ink:#142030; --muted:#5a6a7c; --line:#dae1e9;
   --accent:#0b7a75; --accent-ink:#ffffff;
@@ -39,30 +39,39 @@ p{margin:0}
 button{font:inherit;font-weight:650;font-size:16px;border-radius:11px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:13px 14px;min-height:48px;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 button:disabled{opacity:.45;cursor:not-allowed}
-button:focus-visible,.chips label:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+button:focus-visible,.chips label:focus-within,input[type=text]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .row{display:flex;gap:10px}
-.row>*{flex:1}
+.row>*{flex:1;min-width:0}
 canvas{width:100%;height:96px;display:block;border-radius:10px;background:var(--idle-bg)}
 .chips{display:flex;gap:8px}
 .chips label{position:relative;flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:10px 0;font-size:15px;font-weight:600;cursor:pointer;color:var(--muted)}
 .chips input{position:absolute;opacity:0;pointer-events:none}
 .chips label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chips label:has(input:disabled){opacity:.45;cursor:not-allowed}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:600}
+.field input{font:inherit;font-size:16px;font-weight:500;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;width:100%}
+.sub-card{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px}
+.mic-head{display:flex;align-items:center;gap:10px}
+.mic-head b{flex:1;font-size:15px}
 .bar{height:10px;border-radius:99px;background:var(--idle-bg);overflow:hidden}
 .bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
+.level{height:8px}
 .verdict{border-radius:12px;padding:18px 14px;text-align:center;background:var(--idle-bg);color:var(--muted)}
 .verdict b{display:block;font-size:24px;letter-spacing:-0.01em}
+.verdict .big{display:block;font-size:44px;font-weight:750;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;line-height:1.1}
 .verdict span{font-size:13px}
 .verdict.ok{background:var(--good-bg);color:var(--good)}
 .verdict.no{background:var(--bad-bg);color:var(--bad)}
 .meter{position:relative;height:12px;border-radius:99px;background:var(--idle-bg)}
 .meter>i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--accent);width:0;transition:width .2s}
-.meter>u{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:var(--ink);opacity:.6}
+.meter>u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);opacity:.6}
 .meterlbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
-th,td{text-align:left;padding:8px 4px;border-bottom:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 3px;border-bottom:1px solid var(--line);vertical-align:bottom}
 th{font-size:12px;color:var(--muted);font-weight:600}
-td.num{font-family:var(--mono);text-align:right}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
 th.num{text-align:right}
+th.main{color:var(--accent)}
 textarea{width:100%;min-height:120px;font:12px var(--mono);border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px}
 .hidden{display:none}
 @media (prefers-reduced-motion: reduce){.bar>i,.meter>i{transition:none}}
@@ -72,70 +81,87 @@ textarea{width:100%;min-height:120px;font:12px var(--mono);border-radius:10px;bo
 <main>
   <header>
     <h1>Motion Lock</h1>
-    <p class="sub">Learns how you move your iPhone, then flags motion that does not match. Runs fully on this phone.</p>
+    <p class="sub">Learns how you move your phone and the sound around you, then keeps checking. If the trust score drops too low, it locks. Runs fully on this device.</p>
   </header>
 
   <section class="card" aria-labelledby="h1s">
     <div class="step"><span class="n">1</span><h2 id="h1s">Sensors</h2><span id="sensorPill" class="pill">Off</span></div>
-    <button id="enableBtn" class="primary" type="button">Enable motion sensors</button>
+    <button id="enableBtn" class="primary" type="button">Enable motion + microphone</button>
     <canvas id="trace" aria-label="Live accelerometer trace"></canvas>
-    <p class="meta" id="sensorMeta">Tap the button and allow motion access when Safari asks.</p>
+    <p class="meta" id="sensorMeta">Tap the button and allow both motion and microphone access when Safari asks.</p>
+    <div class="sub-card">
+      <div class="mic-head"><b>Microphone</b><span id="micPill" class="pill">Off</span></div>
+      <p class="meta">Required. Adds 6 sound features per window: loudness, how much it changes, low/mid/high energy and brightness. Only these numbers are kept. Audio is never recorded or saved.</p>
+      <div class="bar level" aria-hidden="true"><i id="micLevel"></i></div>
+      <p class="meta" id="micMeta">Off. Recording needs the microphone.</p>
+    </div>
   </section>
 
   <section class="card" aria-labelledby="h2s">
-    <div class="step"><span class="n">2</span><h2 id="h2s">Record my motion</h2><span id="modelPill" class="pill">No model</span></div>
+    <div class="step"><span class="n">2</span><h2 id="h2s">Teach it you</h2><span id="modelPill" class="pill">No model</span></div>
+    <div class="row">
+      <label class="field">Person<input id="person" type="text" autocomplete="off" autocapitalize="words" placeholder="e.g. Alex"></label>
+      <label class="field">Session<input id="session" type="text" autocomplete="off" placeholder="e.g. day1-walk"></label>
+    </div>
     <p class="meta">Hold the phone and move the way you normally do, for example walking with it in your hand. Keep to the same activity the whole time.</p>
     <div class="chips" role="radiogroup" aria-label="Recording length">
       <label><input type="radio" name="dur" value="30">30 s</label>
       <label><input type="radio" name="dur" value="60" checked>60 s</label>
       <label><input type="radio" name="dur" value="120">120 s</label>
     </div>
-    <button id="trainBtn" class="primary" type="button" disabled>Record my motion</button>
+    <button id="trainBtn" class="primary" type="button" disabled>Record my motion + sound</button>
     <div class="bar" aria-hidden="true"><i id="trainBar"></i></div>
     <p class="meta" id="trainMeta">No recording yet.</p>
   </section>
 
   <section class="card" aria-labelledby="h3s">
-    <div class="step"><span class="n">3</span><h2 id="h3s">Live check</h2></div>
-    <div id="verdict" class="verdict" aria-live="polite"><b>No model yet</b><span>Record your motion first.</span></div>
+    <div class="step"><span class="n">3</span><h2 id="h3s">Protect</h2><span id="protPill" class="pill">Off</span></div>
+    <div id="verdict" class="verdict" aria-live="polite"><b>No model yet</b><span>Teach it you first.</span></div>
     <div>
-      <div class="meter" aria-hidden="true"><i id="meterFill"></i><u></u></div>
-      <div class="meterlbl"><span>closer to you</span><span>limit</span><span>further away</span></div>
+      <div class="meter" aria-hidden="true"><i id="meterFill"></i><u id="lockLine"></u></div>
+      <div class="meterlbl"><span>0</span><span id="lockLbl">locks below 30</span><span>100</span></div>
+    </div>
+    <p class="meta">Checks every half second. Trust goes up while your motion and sound match and down when they don't. It is built to be sure rather than fast: one odd step barely moves it, and it takes about 10 to 20 seconds of someone else to lock.</p>
+    <div class="row">
+      <button id="protBtn" class="primary" type="button" disabled>Start protecting</button>
+      <button id="unlockBtn" type="button" class="hidden">Unlock (I'm the owner)</button>
     </div>
     <div>
       <label for="sens" class="meta">Strictness: <b id="sensVal">normal</b></label>
       <input id="sens" type="range" min="0.6" max="1.6" step="0.1" value="1.0" style="width:100%" aria-describedby="sensVal">
       <div class="meterlbl"><span>stricter</span><span>more forgiving</span></div>
     </div>
-    <button id="monBtn" type="button" disabled>Start live check</button>
+    <div class="sub-card">
+      <div class="mic-head"><b>Keeps learning you</b><span id="learnPill" class="pill">0 learned</span></div>
+      <p class="meta">While trust is high and a window clearly matches, it is added to your model so it keeps up with how you move on different days. Nothing is learned while trust is dropping.</p>
+      <button id="forgetBtn" type="button" disabled>Forget what it learned</button>
+    </div>
   </section>
 
   <section class="card" aria-labelledby="h4s">
     <div class="step"><span class="n">4</span><h2 id="h4s">Measure accuracy</h2></div>
-    <p class="meta">Each test runs 20 seconds. For "someone else", hand the phone to another person doing the same activity as you.</p>
-    <div class="row">
-      <button id="testMe" type="button" disabled>Test as me</button>
-      <button id="testOther" type="button" disabled>Test as someone else</button>
+    <p class="meta">While protecting, tell the app who really has the phone. Tap "Someone else" and hand it over right away; let them use it for at least 30 seconds. Tap "Me" when you get it back.</p>
+    <div class="chips" role="radiogroup" aria-label="Who has the phone right now">
+      <label><input type="radio" name="who" value="" checked disabled>Not testing</label>
+      <label><input type="radio" name="who" value="owner" disabled>Me</label>
+      <label><input type="radio" name="who" value="other" disabled>Someone else</label>
     </div>
-    <div class="bar" aria-hidden="true"><i id="testBar"></i></div>
-    <p class="meta" id="testMeta">No tests yet.</p>
+    <p class="meta" id="evalMeta">Start protecting to begin.</p>
     <table>
-      <thead><tr><th>Who</th><th class="num">Windows</th><th class="num">Correct</th><th class="num">Rate</th></tr></thead>
-      <tbody>
-        <tr><td>Me (should match)</td><td class="num" id="meN">0</td><td class="num" id="meA">0</td><td class="num" id="meR">-</td></tr>
-        <tr><td>Other (should not match)</td><td class="num" id="otN">0</td><td class="num" id="otA">0</td><td class="num" id="otR">-</td></tr>
-        <tr><td><b>Balanced accuracy</b></td><td></td><td></td><td class="num" id="balR">-</td></tr>
-      </tbody>
+      <thead><tr><th></th><th class="num">Result</th></tr></thead>
+      <tbody id="evalBody"></tbody>
     </table>
-    <button id="resetTests" type="button">Reset results</button>
+    <button id="resetEval" type="button">Reset results</button>
   </section>
 
   <section class="card" aria-labelledby="h5s">
     <div class="step"><h2 id="h5s">Save for the report</h2></div>
+    <p class="meta" id="dataMeta">No saved windows yet.</p>
     <div class="row">
       <button id="copyBtn" type="button">Copy summary</button>
       <button id="csvBtn" type="button" disabled>Download CSV</button>
     </div>
+    <button id="clearBtn" type="button" disabled>Delete saved data</button>
     <textarea id="summaryBox" class="hidden" readonly aria-label="Session summary"></textarea>
   </section>
 </main>
@@ -239,16 +265,47 @@ function classify(model, x, scale){
 }
 // ==CORE END==
 
+// ---------- sound features (summary numbers only, no audio kept) ----------
+const SOUND_NAMES = ['snd_level_mean_db','snd_level_std_db','snd_band_low','snd_band_mid','snd_band_high','snd_centroid_kHz'];
+// frames: [{t, lvl, lo, mi, hi, cen}] sampled every ~50 ms; returns a 6-number vector or null
+function soundFeatures(frames, t0, t1){
+  const f = frames.filter(r => r.t >= t0 && r.t <= t1);
+  if(f.length < 15) return null;
+  const lv = f.map(r => r.lvl);
+  return [mean(lv), std(lv), mean(f.map(r => r.lo)), mean(f.map(r => r.mi)), mean(f.map(r => r.hi)), mean(f.map(r => r.cen))/1000];
+}
+
+// ---------- trust score ----------
+// Each 2 s window (every 0.5 s) moves trust: a match adds 2, a mismatch costs 2 to 6 depending on how far off it is.
+// Trust starts at 100 and the phone locks below TRUST_LOCK. Favors accuracy over speed.
+const TRUST_LOCK = 30, TRUST_GAIN = 2, LEARN_MIN_TRUST = 80, LEARN_MAX_RATIO = 0.7, LEARN_EVERY = 4, LEARN_CAP = 300;
+const TRACKERS = [ { id:'main', label:'Motion + sound', learn:true } ];
+function trustStep(trust, ratio){
+  const d = ratio <= 1 ? TRUST_GAIN : -(2 + 4*Math.min(ratio - 1, 1));
+  return Math.max(0, Math.min(100, trust + d));
+}
+
 // ---------- app ----------
 const $ = id => document.getElementById(id);
 const S = {
-  listening:false, live:false, active:false, monitoring:false,
+  listening:false, live:false, active:false, protecting:false,
   buf:{t:[],ax:[],ay:[],az:[],gx:[],gy:[],gz:[]}, lastEmit:0, rateT:[],
-  trace:[], sens:1, model:null, trainX:[], recent:[], ratios:[], rec:null,
-  tests:{me:{a:0,n:0}, other:{a:0,n:0}}, log:[], wake:null
+  trace:[], sens:1, models:null, trainX:[], rec:null, log:[], wake:null, windows:[],
+  learned:[], learnTick:0, tr:{}, who:'', ev:null, lastWinT:0, unsaved:0
 };
+const SND = { on:false, ctx:null, stream:null, an:null, td:null, fd:null, frames:[], timer:null, level:0, last:0 };
 function logEvt(m){ S.log.push(new Date().toLocaleTimeString() + '  ' + m); }
 function durSel(){ return Number(document.querySelector('input[name=dur]:checked').value); }
+function personVal(){ return ($('person').value.trim() || 'unnamed'); }
+function sessionVal(){ return ($('session').value.trim() || new Date().toISOString().slice(0,10)); }
+function pct(a, n){ return n ? Math.round(100*a/n) + '%' : '-'; }
+function emptyEval(){
+  const per = {};
+  TRACKERS.forEach(t => per[t.id] = { on:0, oa:0, xn:0, xa:0, falseLocks:0, caught:0, missed:0, times:[] });
+  return { per, ownerMs:0, otherMs:0, handovers:0, otherStart:0, labelAt:0 };
+}
+function resetTrackers(){ TRACKERS.forEach(t => S.tr[t.id] = { trust:100, locked:false, ratio:0, caughtSeg:false }); }
+S.ev = emptyEval(); resetTrackers();
 
 function onMotion(e){
   const a = e.accelerationIncludingGravity, r = e.rotationRate;
@@ -261,132 +318,223 @@ function onMotion(e){
   while(b.t.length && t - b.t[0] > WIN_MS + 500){ for(const key in b) b[key].shift(); }
   S.rateT.push(t); while(S.rateT.length && t - S.rateT[0] > 1000) S.rateT.shift();
   S.trace.push([t, mag(a.x,a.y,a.z)]); while(S.trace.length && t - S.trace[0][0] > 4000) S.trace.shift();
+  if(SND.on) sampleSound(); // also sampled here because page timers can be throttled
   if(!S.live){ S.live = true; refreshUI(); }
   if(S.active && t - S.lastEmit >= STEP_MS && b.t.length > 20 && t - b.t[0] >= WIN_MS*0.95){
     S.lastEmit = t;
     let i0 = 0; while(i0 < b.t.length && b.t[i0] < t - WIN_MS) i0++;
     const w = {}; for(const key in b) w[key] = b[key].slice(i0);
-    const f = extractFeatures(w);
-    if(f) onWindow(f);
+    const m = extractFeatures(w);
+    if(!m || !SND.on) return;
+    const s = soundFeatures(SND.frames, w.t[0], t);
+    if(!s) return; // skip windows without enough sound frames
+    onWindow({ m, s }, t);
   }
 }
 
-function onWindow(f){
-  const rec = S.rec;
-  if(rec && rec.kind === 'train'){
-    S.trainX.push(f);
+function recordWindow(phase, win){
+  S.windows.push({ time:new Date().toISOString(), person:personVal(), session:sessionVal(), phase, m:win.m, s:win.s });
+}
+
+function onWindow(win, t){
+  if(S.rec && S.rec.kind === 'train'){
+    S.trainX.push(win); recordWindow('train', win);
     $('trainMeta').textContent = 'Recording... ' + S.trainX.length + ' windows collected.';
-  } else if(rec && rec.kind.startsWith('test')){
-    if(!S.model) return;
-    const c = classify(S.model, f, S.sens), key = rec.kind === 'test-me' ? 'me' : 'other';
-    S.tests[key].n++;
-    if((key === 'me') === c.owner) S.tests[key].a++;
-    renderTests();
-  } else if(S.monitoring && S.model){
-    const c = classify(S.model, f, S.sens);
-    S.recent.push(c.owner); if(S.recent.length > 5) S.recent.shift();
-    S.ratios.push(c.ratio); if(S.ratios.length > 5) S.ratios.shift();
-    renderVerdict();
+    return;
   }
+  if(!S.protecting || !S.models) return;
+  const who = S.who, ev = S.ev;
+  const dt = S.lastWinT ? Math.min(1000, t - S.lastWinT) : STEP_MS; S.lastWinT = t;
+  if(who === 'owner') ev.ownerMs += dt; else if(who === 'other') ev.otherMs += dt;
+  if(who){ recordWindow('eval-' + who, win); S.unsaved++; }
+  let mainZ = null, mainRatio = 0;
+  TRACKERS.forEach(def => {
+    const mdl = S.models.combined;
+    const x = win.m.concat(win.s);
+    const z = zscore(x, mdl.norm);
+    const ref = def.learn && S.learned.length ? mdl.Z.concat(S.learned) : mdl.Z;
+    const ratio = knnScore(z, ref, mdl.k) / (mdl.thr * S.sens);
+    const st = S.tr[def.id], P = ev.per[def.id];
+    st.ratio = ratio;
+    st.trust = trustStep(st.trust, ratio);
+    const settled = t - ev.labelAt >= WIN_MS; // skip windows that still mix in the previous person
+    if(settled && who === 'owner'){ P.on++; if(ratio <= 1) P.oa++; }
+    if(settled && who === 'other'){ P.xn++; if(ratio > 1) P.xa++; }
+    if(!st.locked && st.trust < TRUST_LOCK){
+      st.locked = true;
+      if(who === 'owner'){
+        P.falseLocks++; logEvt(def.label + ': false lock while owner had the phone');
+        st.locked = false; st.trust = 100; // during testing the owner "unlocks" right away so testing can go on
+        if(def.id === 'main') flashNote('False lock counted. Unlocked automatically so testing can continue.');
+      } else if(who === 'other'){
+        if(!st.caughtSeg){ st.caughtSeg = true; P.caught++; P.times.push((t - ev.otherStart)/1000); logEvt(def.label + ': locked ' + ((t - ev.otherStart)/1000).toFixed(1) + ' s after hand-over'); }
+      } else if(def.id === 'main') logEvt('Locked (trust below ' + TRUST_LOCK + ')');
+    }
+    if(def.id === 'main'){ mainZ = z; mainRatio = ratio; }
+  });
+  // keep learning the owner: only confident matches while trust is high, and only every few windows
+  const main = S.tr.main;
+  if(!main.locked && main.trust >= LEARN_MIN_TRUST && mainRatio <= LEARN_MAX_RATIO && (++S.learnTick % LEARN_EVERY === 0)){
+    S.learned.push(mainZ); if(S.learned.length > LEARN_CAP) S.learned.shift();
+    if(S.learned.length % 10 === 0) saveLearned();
+  }
+  if(S.unsaved >= 40){ saveWindows(); S.unsaved = 0; }
+  renderTrust(); renderEval();
 }
 
+let noteTimer = null;
+function flashNote(msg){ S.note = msg; clearTimeout(noteTimer); noteTimer = setTimeout(() => { S.note = ''; renderTrust(); }, 4000); }
+
+// ---------- training ----------
 function startRec(kind, dur){
-  stopMonitor();
+  stopProtect();
   S.rec = { kind, dur, begin: performance.now() + 3000, started:false };
-  S.active = false;
-  if(kind === 'train') S.trainX = [];
+  S.active = false; S.trainX = [];
   refreshUI();
 }
 function tick(){
   const rec = S.rec; if(!rec) return;
-  const now = performance.now();
-  const isTrain = rec.kind === 'train';
-  const bar = $(isTrain ? 'trainBar' : 'testBar'), meta = $(isTrain ? 'trainMeta' : 'testMeta');
+  const now = performance.now(), bar = $('trainBar'), meta = $('trainMeta');
   if(!rec.started){
     const left = Math.ceil((rec.begin - now)/1000);
     if(left > 0){ meta.textContent = 'Get ready... starting in ' + left; bar.style.width = '0%'; return; }
     rec.started = true; rec.t0 = now;
     for(const key in S.buf) S.buf[key].length = 0;
     S.lastEmit = now; S.active = true;
-    logEvt('Started ' + rec.kind + ' (' + rec.dur + ' s)');
+    logEvt('Started training (' + rec.dur + ' s, person "' + personVal() + '", session "' + sessionVal() + '")');
   }
   const p = (now - rec.t0)/1000/rec.dur;
   bar.style.width = Math.min(100, p*100) + '%';
-  if(!isTrain) meta.textContent = (rec.kind === 'test-me' ? 'Testing as you' : 'Testing as someone else') + '... ' + Math.max(0, Math.ceil(rec.dur - (now-rec.t0)/1000)) + ' s left';
   if(p >= 1) finishRec();
 }
 function finishRec(){
-  const rec = S.rec; S.rec = null; S.active = false;
-  if(rec.kind === 'train'){
-    if(S.trainX.length < 20){
-      $('trainMeta').textContent = 'Only ' + S.trainX.length + ' usable windows. Keep the phone moving and try a longer recording.';
-      logEvt('Training failed: ' + S.trainX.length + ' windows');
-    } else {
-      S.model = trainModel(S.trainX);
-      S.tests = {me:{a:0,n:0}, other:{a:0,n:0}};
-      saveModel();
-      $('trainMeta').textContent = 'Trained on ' + S.model.n + ' windows.';
-      logEvt('Trained on ' + S.model.n + ' windows, limit ' + S.model.thr.toFixed(3));
-    }
-    $('trainBar').style.width = '100%';
+  S.rec = null; S.active = false;
+  if(S.trainX.length < 20){
+    $('trainMeta').textContent = 'Only ' + S.trainX.length + ' usable windows. Keep the phone moving and try a longer recording.';
+    logEvt('Training failed: ' + S.trainX.length + ' windows');
   } else {
-    $('testMeta').textContent = 'Test finished.';
-    $('testBar').style.width = '100%';
-    logEvt('Finished ' + rec.kind + ': me ' + S.tests.me.a + '/' + S.tests.me.n + ', other ' + S.tests.other.a + '/' + S.tests.other.n);
+    const combined = trainModel(S.trainX.map(w => w.m.concat(w.s)));
+    S.models = { combined };
+    S.learned = []; saveLearned();
+    S.ev = emptyEval(); resetTrackers();
+    saveModel();
+    $('trainMeta').textContent = 'Trained on ' + combined.n + ' windows of motion + sound.';
+    logEvt('Trained on ' + combined.n + ' windows, limit ' + combined.thr.toFixed(3));
   }
-  renderTests(); refreshUI(); renderVerdict();
+  $('trainBar').style.width = '100%';
+  saveWindows();
+  refreshUI(); renderTrust(); renderEval();
 }
 
-function startMonitor(){
-  if(!S.model) return;
-  S.monitoring = true; S.recent = []; S.ratios = [];
+// ---------- protect ----------
+function startProtect(){
+  if(!S.models || !SND.on) return;
+  S.protecting = true; resetTrackers(); S.lastWinT = 0;
   for(const key in S.buf) S.buf[key].length = 0;
   S.lastEmit = performance.now(); S.active = true;
-  logEvt('Live check on'); refreshUI(); renderVerdict();
+  logEvt('Protecting on'); refreshUI(); renderTrust(); renderEval();
 }
-function stopMonitor(){
-  if(!S.monitoring) return;
-  S.monitoring = false; if(!S.rec) S.active = false;
-  logEvt('Live check off'); refreshUI(); renderVerdict();
+function stopProtect(){
+  if(!S.protecting) return;
+  setWho('');
+  S.protecting = false; if(!S.rec) S.active = false;
+  saveWindows(); saveLearned();
+  logEvt('Protecting off'); refreshUI(); renderTrust(); renderEval();
+}
+function unlock(){
+  resetTrackers(); logEvt('Owner unlocked');
+  renderTrust(); renderEval();
+}
+function setWho(v){
+  const prev = S.who, ev = S.ev;
+  if(prev === v) return;
+  if(prev === 'other'){ // hand-over ended: anything that never locked missed it; owner unlocks
+    TRACKERS.forEach(d => { if(!S.tr[d.id].caughtSeg) ev.per[d.id].missed++; });
+    resetTrackers();
+  }
+  if(v === 'other'){ ev.handovers++; ev.otherStart = performance.now(); TRACKERS.forEach(d => S.tr[d.id].caughtSeg = false); }
+  if(v === 'owner' && S.tr.main.locked) resetTrackers();
+  S.who = v; ev.labelAt = performance.now();
+  document.querySelector('input[name=who][value="' + v + '"]').checked = true;
+  logEvt(v === 'other' ? 'Testing: someone else has the phone' : v === 'owner' ? 'Testing: owner has the phone' : 'Testing paused');
+  saveWindows(); renderEval();
 }
 
-function renderVerdict(){
-  const v = $('verdict'), fill = $('meterFill');
+// ---------- render ----------
+function renderTrust(){
+  const v = $('verdict'), fill = $('meterFill'), st = S.tr.main;
   v.className = 'verdict';
-  if(!S.model){ v.innerHTML = '<b>No model yet</b><span>Record your motion first.</span>'; fill.style.width = '0'; return; }
-  if(!S.monitoring){ v.innerHTML = '<b>Ready</b><span>Start the live check to compare your motion to the model.</span>'; fill.style.width = '0'; return; }
-  if(S.recent.length < 3){ v.innerHTML = '<b>Listening...</b><span>Need a few seconds of motion.</span>'; fill.style.width = '0'; return; }
-  const yes = S.recent.filter(Boolean).length, ok = yes*2 > S.recent.length;
-  const r = mean(S.ratios);
-  v.classList.add(ok ? 'ok' : 'no');
-  v.innerHTML = ok ? '<b>Matches owner</b><span>' + yes + ' of last ' + S.recent.length + ' windows match</span>'
-                   : '<b>Does not match owner</b><span>' + (S.recent.length - yes) + ' of last ' + S.recent.length + ' windows differ</span>';
-  fill.style.width = Math.min(100, r*50) + '%';
+  $('lockLine').style.left = TRUST_LOCK + '%';
+  $('unlockBtn').classList.toggle('hidden', !(S.protecting && st.locked));
+  const pp = $('protPill');
+  if(!S.models){ v.innerHTML = '<b>No model yet</b><span>Teach it you first.</span>'; fill.style.width = '0'; pp.textContent = 'Off'; pp.className = 'pill'; return; }
+  if(!S.protecting){ v.innerHTML = '<b>Ready</b><span>Start protecting to begin checking.</span>'; fill.style.width = '0'; pp.textContent = 'Off'; pp.className = 'pill'; return; }
+  const trust = Math.round(st.trust);
+  fill.style.width = trust + '%';
+  if(st.locked){
+    v.classList.add('no'); pp.textContent = 'Locked'; pp.className = 'pill warn';
+    v.innerHTML = '<span class="big">' + trust + '</span><b>Locked</b><span>Trust fell below ' + TRUST_LOCK + '. This does not look like the owner.</span>';
+  } else {
+    v.classList.add(trust >= 60 ? 'ok' : 'no'); pp.textContent = 'Protecting'; pp.className = 'pill on';
+    const msg = S.note || (st.ratio <= 1 ? 'Last window matched you.' : 'Last window did not match.');
+    v.innerHTML = '<span class="big">' + trust + '</span><b>' + (trust >= 60 ? 'Unlocked' : 'Unsure') + '</b><span>' + msg + '</span>';
+  }
+  $('learnPill').textContent = S.learned.length + ' learned';
 }
-function renderTests(){
-  const m = S.tests.me, o = S.tests.other;
-  $('meN').textContent = m.n; $('meA').textContent = m.a; $('meR').textContent = m.n ? Math.round(100*m.a/m.n) + '%' : '-';
-  $('otN').textContent = o.n; $('otA').textContent = o.a; $('otR').textContent = o.n ? Math.round(100*o.a/o.n) + '%' : '-';
-  $('balR').textContent = (m.n && o.n) ? Math.round(50*(m.a/m.n + o.a/o.n)) + '%' : '-';
+function renderEval(){
+  const ev = S.ev, per = ev.per;
+  const ownerMin = ev.ownerMs/60000;
+  const cell = f => TRACKERS.map(d => '<td class="num">' + f(per[d.id], d) + '</td>').join('');
+  const rows = [
+    ['Trust now', (p, d) => S.protecting ? Math.round(S.tr[d.id].trust) + (S.tr[d.id].locked ? ' 🔒' : '') : '-'],
+    ['My windows accepted', p => pct(p.oa, p.on)],
+    ['Other windows rejected', p => pct(p.xa, p.xn)],
+    ['False locks on me', p => ev.ownerMs ? p.falseLocks + (ownerMin >= 1 ? ' (' + (p.falseLocks/(ownerMin/60)).toFixed(1) + '/h)' : '') : '-'],
+    ['Hand-overs caught', p => ev.handovers ? p.caught + '/' + (p.caught + p.missed) : '-'],
+    ['Avg time to lock', p => p.times.length ? mean(p.times).toFixed(1) + ' s' : '-']
+  ];
+  $('evalBody').innerHTML = rows.map(r => '<tr><td>' + r[0] + '</td>' + cell(r[1]) + '</tr>').join('');
+  const meta = $('evalMeta');
+  if(!S.protecting) meta.textContent = ev.handovers || ev.ownerMs ? 'Paused. ' + ownerMin.toFixed(1) + ' min with you, ' + ev.handovers + ' hand-overs so far.' : 'Start protecting to begin.';
+  else if(S.who === 'other') meta.textContent = 'Someone else has it: ' + Math.round((performance.now() - ev.otherStart)/1000) + ' s. Keep going for at least 30 s, then tap "Me".';
+  else if(S.who === 'owner') meta.textContent = 'You have it. ' + ownerMin.toFixed(1) + ' min of owner time recorded. Longer is better for the false-lock number.';
+  else meta.textContent = 'Protecting. Pick "Me" or "Someone else" to start measuring.';
 }
 function refreshUI(){
-  const busy = !!S.rec, ready = S.live && !busy;
-  $('trainBtn').disabled = !ready;
-  $('monBtn').disabled = !(ready && S.model);
-  $('monBtn').textContent = S.monitoring ? 'Stop live check' : 'Start live check';
-  $('testMe').disabled = !(ready && S.model);
-  $('testOther').disabled = !(ready && S.model);
-  $('csvBtn').disabled = !S.trainX.length;
+  const busy = !!S.rec, ready = S.live && SND.on && !busy;
+  $('trainBtn').disabled = !ready || S.protecting;
+  $('protBtn').disabled = !(ready && S.models);
+  $('protBtn').textContent = S.protecting ? 'Stop protecting' : 'Start protecting';
+  document.querySelectorAll('input[name=who]').forEach(i => i.disabled = !S.protecting);
+  $('person').disabled = busy; $('session').disabled = busy;
+  $('csvBtn').disabled = !S.windows.length;
+  $('clearBtn').disabled = !S.windows.length || busy;
+  $('forgetBtn').disabled = !S.learned.length;
+  $('learnPill').textContent = S.learned.length + ' learned';
   const mp = $('modelPill');
-  if(S.model){ mp.textContent = 'Trained'; mp.className = 'pill on'; $('trainMeta').textContent = $('trainMeta').textContent.startsWith('Recording') || $('trainMeta').textContent.startsWith('Get ready') ? $('trainMeta').textContent : 'Model ready: ' + S.model.n + ' windows, limit ' + S.model.thr.toFixed(2) + '.'; }
-  else { mp.textContent = 'No model'; mp.className = 'pill'; }
+  if(S.models){
+    mp.textContent = 'Trained'; mp.className = 'pill on';
+    const tm = $('trainMeta').textContent;
+    if(!tm.startsWith('Recording') && !tm.startsWith('Get ready') && !tm.startsWith('Only'))
+      $('trainMeta').textContent = 'Model ready: ' + S.models.combined.n + ' windows of motion + sound.';
+  } else { mp.textContent = 'No model'; mp.className = 'pill'; }
   const sp = $('sensorPill');
   if(S.live){ sp.textContent = 'Live'; sp.className = 'pill on'; }
+  renderData();
+}
+function renderData(){
+  const n = S.windows.length;
+  if(!n){ $('dataMeta').textContent = 'No saved windows yet. Training and test windows are saved on this device with their person and session labels.'; return; }
+  const people = new Set(S.windows.map(w => w.person)), sessions = new Set(S.windows.map(w => w.person + '|' + w.session));
+  $('dataMeta').textContent = n + ' saved windows from ' + people.size + (people.size === 1 ? ' person' : ' people') + ', ' + sessions.size + (sessions.size === 1 ? ' session' : ' sessions') + '. The CSV has all of them.';
 }
 
 // ---------- sensors ----------
 async function enableSensors(){
   const meta = $('sensorMeta'), pill = $('sensorPill');
+  // create the audio context inside the tap itself, before any await, so iOS lets it run
+  let ctx = SND.ctx;
+  if(!ctx){ try{ const AC = window.AudioContext || window.webkitAudioContext; if(AC) ctx = new AC(); }catch(e){ ctx = null; } }
   try{
     if(!window.isSecureContext){ meta.textContent = 'Motion sensors need a secure (https) page. Open this page from its https link.'; pill.textContent = 'Blocked'; pill.className = 'pill warn'; return; }
     if(typeof DeviceMotionEvent === 'undefined'){ meta.textContent = 'This browser does not expose motion sensors. Open the page in Safari on your iPhone.'; pill.textContent = 'Unsupported'; pill.className = 'pill warn'; return; }
@@ -395,7 +543,8 @@ async function enableSensors(){
       if(r !== 'granted'){ meta.textContent = 'Motion access was denied. Quit Safari, reopen this page and tap Allow.'; pill.textContent = 'Denied'; pill.className = 'pill warn'; return; }
     }
     if(!S.listening){ window.addEventListener('devicemotion', onMotion); S.listening = true; }
-    pill.textContent = 'Waiting'; meta.textContent = 'Waiting for the first reading...';
+    if(!S.live){ pill.textContent = 'Waiting'; meta.textContent = 'Waiting for the first reading...'; }
+    if(!SND.on) await startMic(ctx);
     requestWake();
     setTimeout(() => { if(!S.live){ meta.textContent = 'No motion data yet. This only works on a phone or tablet, not a desktop browser.'; pill.textContent = 'No data'; pill.className = 'pill warn'; } }, 2500);
     logEvt('Sensors enabled');
@@ -408,6 +557,66 @@ async function requestWake(){
   try{ if('wakeLock' in navigator && !S.wake){ S.wake = await navigator.wakeLock.request('screen'); S.wake.addEventListener('release', () => { S.wake = null; }); } }catch(e){}
 }
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && S.listening) requestWake(); });
+
+// ---------- microphone ----------
+async function startMic(ctx){
+  const meta = $('micMeta'), pill = $('micPill');
+  if(SND.on) return;
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ meta.textContent = 'This browser does not give pages microphone access.'; pill.textContent = 'Unsupported'; pill.className = 'pill warn'; return; }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, video:false });
+    if(!ctx){ const AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
+    if(ctx.state === 'suspended') await ctx.resume();
+    const an = ctx.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+    ctx.createMediaStreamSource(stream).connect(an); // analysed only, never played back or recorded
+    Object.assign(SND, { on:true, ctx, stream, an, td:new Float32Array(an.fftSize), fd:new Float32Array(an.frequencyBinCount), frames:[] });
+    SND.timer = setInterval(sampleSound, 50);
+    stream.getAudioTracks().forEach(tr => tr.addEventListener('ended', stopMic));
+    pill.textContent = 'On'; pill.className = 'pill on';
+    meta.textContent = 'Listening. Only loudness and pitch summaries are kept.';
+    logEvt('Microphone on');
+  } catch(err){
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    meta.textContent = denied ? 'Microphone access was denied, and the app needs it. In Settings > Apps > Safari > Microphone choose Ask or Allow, then reload this page and tap Enable again.' : 'Could not start microphone: ' + (err && err.message ? err.message : err);
+    pill.textContent = denied ? 'Denied' : 'Error'; pill.className = 'pill warn';
+  }
+  refreshUI();
+}
+function stopMic(){
+  if(!SND.on) return;
+  if(S.rec){ S.rec = null; S.active = false; S.trainX = []; $('trainMeta').textContent = 'Stopped: the microphone turned off. Tap Enable and try again.'; }
+  stopProtect();
+  clearInterval(SND.timer);
+  try{ SND.stream.getTracks().forEach(tr => tr.stop()); }catch(e){}
+  try{ SND.ctx.close(); }catch(e){}
+  Object.assign(SND, { on:false, ctx:null, stream:null, an:null, frames:[], timer:null, level:0, last:0 });
+  $('micPill').textContent = 'Off'; $('micPill').className = 'pill';
+  $('micMeta').textContent = 'The microphone stopped (another app may have taken it). Tap Enable motion + microphone to restart.';
+  $('micLevel').style.width = '0';
+  logEvt('Microphone stopped');
+  refreshUI();
+}
+function sampleSound(){
+  const an = SND.an; if(!an) return;
+  const now = performance.now(); if(now - SND.last < 45) return; SND.last = now;
+  an.getFloatTimeDomainData(SND.td);
+  let ss = 0; for(let i=0;i<SND.td.length;i++) ss += SND.td[i]*SND.td[i];
+  const lvl = 20*Math.log10(Math.sqrt(ss/SND.td.length) + 1e-6);
+  an.getFloatFrequencyData(SND.fd);
+  const hz = SND.ctx.sampleRate / an.fftSize;
+  let lo = 0, mi = 0, hi = 0, num = 0, den = 0;
+  for(let i=1;i<SND.fd.length;i++){
+    const f = i*hz; if(f < 50 || f > 8000) continue;
+    const p = Math.pow(10, SND.fd[i]/10);
+    if(f < 300) lo += p; else if(f < 2000) mi += p; else hi += p;
+    num += f*p; den += p;
+  }
+  const t = performance.now();
+  SND.frames.push({ t, lvl, lo:Math.log10(lo + 1e-12), mi:Math.log10(mi + 1e-12), hi:Math.log10(hi + 1e-12), cen: den > 0 ? num/den : 0 });
+  while(SND.frames.length && t - SND.frames[0].t > WIN_MS + 1000) SND.frames.shift();
+  SND.level = Math.max(0, Math.min(1, (lvl + 70)/60));
+  $('micLevel').style.width = (SND.level*100) + '%';
+}
 
 // ---------- trace ----------
 function drawTrace(){
@@ -426,24 +635,61 @@ function drawTrace(){
     g.stroke();
     $('sensorMeta').textContent = S.rateT.length + ' readings per second. Trace shows acceleration strength over the last 4 seconds.';
   }
+  if(S.protecting && S.who === 'other') renderEval();
   requestAnimationFrame(drawTrace);
 }
 
 // ---------- save / export ----------
+function packModel(m){ return m ? { k:m.k, norm:m.norm, Z:m.Z, thr:m.thr, n:m.n, cvMedian:m.cvMedian } : null; }
 function saveModel(){
-  try{ localStorage.setItem('motionlock-model', JSON.stringify({ k:S.model.k, norm:S.model.norm, Z:S.model.Z, thr:S.model.thr, n:S.model.n, cvMedian:S.model.cvMedian })); }catch(e){}
+  try{ localStorage.setItem('motionlock-model', JSON.stringify({ v:2, combined:packModel(S.models.combined) })); }catch(e){}
 }
 function loadModel(){
-  try{ const raw = localStorage.getItem('motionlock-model'); if(raw){ S.model = JSON.parse(raw); logEvt('Loaded saved model (' + S.model.n + ' windows)'); } }catch(e){}
+  try{
+    const raw = localStorage.getItem('motionlock-model'); if(!raw) return;
+    const o = JSON.parse(raw);
+    if(o.v !== 2 || !o.combined){ localStorage.removeItem('motionlock-model'); logEvt('Removed old motion-only model. Record again with sound.'); return; }
+    S.models = { combined:o.combined };
+    logEvt('Loaded saved model (' + S.models.combined.n + ' windows)');
+  }catch(e){ S.models = null; }
+}
+function saveLearned(){ try{ localStorage.setItem('motionlock-learned', JSON.stringify(S.learned)); }catch(e){} }
+function loadLearned(){ try{ const raw = localStorage.getItem('motionlock-learned'); S.learned = raw ? (JSON.parse(raw) || []) : []; }catch(e){ S.learned = []; } }
+function saveWindows(){
+  try{ localStorage.setItem('motionlock-windows', JSON.stringify(S.windows)); }
+  catch(e){ $('dataMeta').textContent = 'Storage is full. Download the CSV, then delete saved data.'; }
+}
+function loadWindows(){
+  try{ const raw = localStorage.getItem('motionlock-windows'); if(raw) S.windows = JSON.parse(raw) || []; }catch(e){ S.windows = []; }
+}
+function loadLabels(){
+  try{ $('person').value = localStorage.getItem('motionlock-person') || ''; $('session').value = localStorage.getItem('motionlock-session') || ''; }catch(e){}
+}
+function saveLabels(){
+  try{ localStorage.setItem('motionlock-person', $('person').value); localStorage.setItem('motionlock-session', $('session').value); }catch(e){}
 }
 function summaryText(){
-  const m = S.tests.me, o = S.tests.other;
+  const mod = S.models, ev = S.ev;
   const lines = ['Motion Lock session summary', new Date().toString(), '',
-    'Window: ' + WIN_MS/1000 + ' s, step ' + STEP_MS/1000 + ' s, ' + FEATURE_NAMES.length + ' features, model: one-class k-nearest-neighbor (k=3)'];
-  if(S.model) lines.push('Training windows: ' + S.model.n, 'Decision limit: ' + S.model.thr.toFixed(3) + ' (95th percentile of blocked-CV distances x 1.5), strictness setting ' + S.sens.toFixed(2) + '');
-  lines.push('Owner windows accepted: ' + m.a + '/' + m.n + (m.n ? ' (' + Math.round(100*m.a/m.n) + '%)' : ''),
-             'Other windows rejected: ' + o.a + '/' + o.n + (o.n ? ' (' + Math.round(100*o.a/o.n) + '%)' : ''));
-  if(m.n && o.n) lines.push('Balanced accuracy: ' + Math.round(50*(m.a/m.n + o.a/o.n)) + '%');
+    'Person: ' + personVal() + ', session: ' + sessionVal(),
+    'Window: ' + WIN_MS/1000 + ' s, step ' + STEP_MS/1000 + ' s, model: one-class k-nearest-neighbor (k=3)',
+    'Features: ' + FEATURE_NAMES.length + ' motion + ' + SOUND_NAMES.length + ' sound',
+    'Trust score: starts at 100, +' + TRUST_GAIN + ' per matching window, -2 to -6 per mismatch, locks below ' + TRUST_LOCK,
+    'Learning: adds a window when trust >= ' + LEARN_MIN_TRUST + ' and distance <= ' + LEARN_MAX_RATIO + 'x the limit, every ' + LEARN_EVERY + 'th window, up to ' + LEARN_CAP + '. Learned now: ' + S.learned.length];
+  if(mod){
+    lines.push('Training windows: ' + mod.combined.n);
+    lines.push('Decision limit (95th percentile of blocked-CV distances x 1.5): ' + mod.combined.thr.toFixed(3) + '; strictness ' + S.sens.toFixed(2));
+  }
+  lines.push('', 'Testing: ' + (ev.ownerMs/60000).toFixed(1) + ' min with owner, ' + (ev.otherMs/60000).toFixed(1) + ' min with someone else, ' + ev.handovers + ' hand-overs');
+  TRACKERS.forEach(d => {
+    const p = ev.per[d.id];
+    lines.push('Results:',
+      '  Owner windows accepted: ' + p.oa + '/' + p.on + (p.on ? ' (' + pct(p.oa, p.on) + ')' : ''),
+      '  Other windows rejected: ' + p.xa + '/' + p.xn + (p.xn ? ' (' + pct(p.xa, p.xn) + ')' : ''),
+      '  False locks on owner: ' + p.falseLocks + (ev.ownerMs >= 60000 ? ' (' + (p.falseLocks/(ev.ownerMs/3.6e6)).toFixed(1) + ' per hour)' : ''),
+      '  Hand-overs caught: ' + p.caught + '/' + (p.caught + p.missed) + (p.times.length ? ', average ' + mean(p.times).toFixed(1) + ' s to lock' : ''));
+  });
+  lines.push('', 'Saved windows on device: ' + S.windows.length);
   lines.push('', 'Event log:'); S.log.forEach(l => lines.push(l));
   return lines.join('\n');
 }
@@ -452,27 +698,41 @@ async function copySummary(){
   try{ await navigator.clipboard.writeText(text); $('copyBtn').textContent = 'Copied'; setTimeout(() => $('copyBtn').textContent = 'Copy summary', 1500); }
   catch(e){ box.classList.remove('hidden'); box.value = text; box.focus(); box.select(); }
 }
+function csvCell(v){ v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function downloadCsv(){
-  if(!S.trainX.length) return;
-  const rows = [FEATURE_NAMES.join(',')].concat(S.trainX.map(r => r.map(v => v.toFixed(5)).join(',')));
+  if(!S.windows.length) return;
+  saveWindows();
+  const head = ['time','person','session','phase','has_sound'].concat(FEATURE_NAMES, SOUND_NAMES);
+  const rows = [head.join(',')].concat(S.windows.map(w =>
+    [w.time, csvCell(w.person), csvCell(w.session), w.phase, w.s ? 1 : 0]
+      .concat(w.m.map(v => v.toFixed(5)), w.s ? w.s.map(v => v.toFixed(5)) : SOUND_NAMES.map(() => '')).join(',')));
   try{
     const url = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
-    const a = document.createElement('a'); a.href = url; a.download = 'motionlock-training-windows.csv';
+    const a = document.createElement('a'); a.href = url; a.download = 'motionlock-windows-' + new Date().toISOString().slice(0,10) + '.csv';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   }catch(e){ const box = $('summaryBox'); box.classList.remove('hidden'); box.value = rows.join('\n'); }
+}
+function clearData(){
+  if(!confirm('Delete all ' + S.windows.length + ' saved windows from this device? Download the CSV first if you need it. Your trained model is kept.')) return;
+  S.windows = []; saveWindows(); logEvt('Saved windows deleted'); refreshUI();
 }
 
 // ---------- wire up ----------
 $('enableBtn').addEventListener('click', enableSensors);
 $('trainBtn').addEventListener('click', () => startRec('train', durSel()));
-$('testMe').addEventListener('click', () => startRec('test-me', 20));
-$('testOther').addEventListener('click', () => startRec('test-other', 20));
-$('monBtn').addEventListener('click', () => S.monitoring ? stopMonitor() : startMonitor());
-$('resetTests').addEventListener('click', () => { S.tests = {me:{a:0,n:0}, other:{a:0,n:0}}; renderTests(); $('testMeta').textContent = 'Results cleared.'; $('testBar').style.width = '0'; });
+$('protBtn').addEventListener('click', () => S.protecting ? stopProtect() : startProtect());
+$('unlockBtn').addEventListener('click', unlock);
+$('forgetBtn').addEventListener('click', () => { if(!confirm('Forget the ' + S.learned.length + ' windows it learned? Your original training is kept.')) return; S.learned = []; saveLearned(); logEvt('Learning cleared'); refreshUI(); renderTrust(); });
+document.querySelectorAll('input[name=who]').forEach(i => i.addEventListener('change', e => { if(e.target.checked) setWho(e.target.value); }));
+$('resetEval').addEventListener('click', () => { if(S.who) setWho(''); S.ev = emptyEval(); renderEval(); $('evalMeta').textContent = 'Results cleared.'; });
 $('sens').addEventListener('input', e => { S.sens = Number(e.target.value); $('sensVal').textContent = S.sens === 1 ? 'normal' : (S.sens < 1 ? 'stricter (' : 'more forgiving (') + S.sens.toFixed(1) + 'x)'; });
+$('person').addEventListener('input', saveLabels);
+$('session').addEventListener('input', saveLabels);
 $('copyBtn').addEventListener('click', copySummary);
 $('csvBtn').addEventListener('click', downloadCsv);
-loadModel(); renderTests(); renderVerdict(); refreshUI();
+$('clearBtn').addEventListener('click', clearData);
+window.addEventListener('pagehide', () => { saveWindows(); saveLearned(); });
+loadLabels(); loadModel(); loadLearned(); loadWindows(); renderTrust(); renderEval(); refreshUI();
 setInterval(tick, 100);
 requestAnimationFrame(drawTrace);
 </script>
